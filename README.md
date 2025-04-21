@@ -84,11 +84,8 @@ The Biotech DOE Mastery Suite is a comprehensive, interactive web application fo
    ```bash
    streamlit run app.py
    ```
-
-### Hosted Version
-
-The application is also available online at [https://visvikbharti-biotech-doe-suite.streamlit.app/](https://biotech-doe-suite.streamlit.app/)
-
+## Live Demo
+[Access the live application on Streamlit Cloud](https://visvikbharti-biotech-doe-suite.streamlit.app/)
 ## Sample Datasets
 
 The application includes example datasets for common biotechnology applications:
