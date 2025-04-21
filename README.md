@@ -87,7 +87,7 @@ The Biotech DOE Mastery Suite is a comprehensive, interactive web application fo
 
 ### Hosted Version
 
-The application is also available online at [https://biotech-doe-suite.streamlit.app/](https://biotech-doe-suite.streamlit.app/)
+The application is also available online at [https://visvikbharti-biotech-doe-suite.streamlit.app/](https://biotech-doe-suite.streamlit.app/)
 
 ## Sample Datasets
 
@@ -112,3 +112,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Streamlit for the excellent framework for building interactive data applications
 - The scientific community for advancing DOE methodologies in biotechnology
 - All contributors who helped develop and test this application
+

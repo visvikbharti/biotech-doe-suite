@@ -32,7 +32,7 @@ user_experience = st.sidebar.select_slider(
 
 # Add a sidebar footer
 st.sidebar.markdown("---")
-st.sidebar.markdown("© 2025 Biotech DOE Mastery Suite")
+st.sidebar.markdown("© 2025 Vishal Bharti")
 st.sidebar.markdown("Version 1.0.0")
 
 # Display appropriate page based on selection
