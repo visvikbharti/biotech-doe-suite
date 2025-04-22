@@ -12,31 +12,54 @@ import math
 import io
 import base64
 
+# Helper function for standardized effect calculation (difference of averages)
+def calculate_main_effect(data, factor_col, response_col):
+    """Calculates the main effect of a factor based on difference of averages."""
+    mean_high = data.loc[data[factor_col] == 1, response_col].mean()
+    mean_low = data.loc[data[factor_col] == -1, response_col].mean()
+    return mean_high - mean_low
+
+def calculate_interaction_effect(data, factor1_col, factor2_col, response_col):
+    """Calculates the two-factor interaction effect."""
+    # Effect of factor1 when factor2 is high
+    mean_1p_2p = data.loc[(data[factor1_col] == 1) & (data[factor2_col] == 1), response_col].mean()
+    mean_1m_2p = data.loc[(data[factor1_col] == -1) & (data[factor2_col] == 1), response_col].mean()
+    effect1_at_2p = mean_1p_2p - mean_1m_2p
+
+    # Effect of factor1 when factor2 is low
+    mean_1p_2m = data.loc[(data[factor1_col] == 1) & (data[factor2_col] == -1), response_col].mean()
+    mean_1m_2m = data.loc[(data[factor1_col] == -1) & (data[factor2_col] == -1), response_col].mean()
+    effect1_at_2m = mean_1p_2m - mean_1m_2m
+
+    # Interaction is half the difference of these effects
+    interaction_effect = (effect1_at_2p - effect1_at_2m) / 2.0
+    return interaction_effect
+
 def show():
     st.header("Analysis and Interpretation")
-    
+
     st.markdown("""
     ## Statistical Analysis Framework
 
-    The statistical analysis of experimental designs in biotechnology translates raw data into actionable insights through a structured 
-    framework that ensures reliability, validity, and interpretability. This section presents the analytical methods, diagnostic approaches, 
+    The statistical analysis of experimental designs in biotechnology translates raw data into actionable insights through a structured
+    framework that ensures reliability, validity, and interpretability. This section presents the analytical methods, diagnostic approaches,
     and interpretation strategies essential for extracting maximum value from DOE studies.
     """)
-    
+
     # Create tabs for different analysis sections
     tabs = st.tabs([
-        "Effect Estimation", 
-        "Significance Testing", 
+        "Effect Estimation",
+        "Significance Testing",
         "Model Diagnostics",
         "Response Surface Methods",
         "Design Space Characterization",
         "Analysis Workflow"
     ])
-    
+
     # Tab 1: Effect Estimation
     with tabs[0]:
         st.subheader("Effect Estimation")
-        
+
         st.markdown("""
         ### Main Effect Calculation
         **Concept Anchor**: A main effect quantifies the average impact of changing a factor from its low to high level, providing a direct measure of that factor's influence on the response.
@@ -44,91 +67,90 @@ def show():
         **Practical Lens**: In bioprocess development, main effect estimates for critical process parameters like temperature, pH, and dissolved oxygen directly inform process control strategies. For example, a main effect of +15% for temperature on enzyme activity indicates the criticality of temperature control in process design.
 
         **Mathematical Foundation**:
-        For a two-level design with n runs, the main effect of factor A is:
-
-        $$E_A = \\frac{\\sum_{i=1}^{n} x_{iA}y_i}{\\frac{n}{2}}$$
-
-        Where:
-        - $E_A$ is the effect of factor A
-        - $x_{iA}$ is the coded level of factor A in the ith run (+1 or -1)
-        - $y_i$ is the response value for the ith run
-        - $n$ is the total number of runs
-
-        This can be rewritten as:
+        The main effect of factor A is the difference between the average response when A is at its high level and the average response when A is at its low level:
 
         $$E_A = \\bar{y}_{A+} - \\bar{y}_{A-}$$
 
         Where:
-        - $\\bar{y}_{A+}$ is the average response when A is at its high level
-        - $\\bar{y}_{A-}$ is the average response when A is at its low level
+        - $E_A$ is the effect of factor A
+        - $\\bar{y}_{A+}$ is the average response when A is at its high level (+1)
+        - $\\bar{y}_{A-}$ is the average response when A is at its low level (-1)
+
+        Alternatively, using coded levels ($x_{iA} = \\pm 1$) and $n$ runs:
+
+        $$E_A = \\frac{\\sum_{i=1}^{n} x_{iA}y_i}{n/2}$$
+
+        *Note: Both formulas yield the same result for orthogonal two-level designs.*
         """)
-        
+
         # Interactive demo for main effect calculation
         st.markdown("#### Interactive Main Effect Calculation")
-        
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.markdown("**Experiment Setup**")
-            n_runs = st.slider("Number of Runs", min_value=4, max_value=16, value=8, step=4)
-            effect_size = st.slider("True Effect Size", min_value=0.0, max_value=20.0, value=10.0, step=0.5)
-            noise_level = st.slider("Noise Level (σ)", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
-        
+            n_runs_main = st.slider("Number of Runs", min_value=4, max_value=16, value=8, step=4, key="main_effect_runs")
+            true_effect_size = st.slider("True Effect Size (Difference in Averages)", min_value=0.0, max_value=20.0, value=10.0, step=0.5, key="main_effect_size")
+            noise_level_main = st.slider("Noise Level (σ)", min_value=0.1, max_value=10.0, value=2.0, step=0.1, key="main_effect_noise")
+
         # Generate experimental data
         np.random.seed(42)  # For reproducibility
-        factor_A = np.array([-1] * (n_runs//2) + [1] * (n_runs//2))
-        np.random.shuffle(factor_A)  # Randomize run order
-        
-        # Generate response with the specified effect size and noise
-        response = 50 + effect_size/2 * factor_A + np.random.normal(0, noise_level, n_runs)
-        
-        # Calculate effect
-        mean_plus = np.mean(response[factor_A == 1])
-        mean_minus = np.mean(response[factor_A == -1])
-        calculated_effect = mean_plus - mean_minus
-        
-        # Create a dataframe for display
-        exp_data = pd.DataFrame({
-            "Run": range(1, n_runs + 1),
-            "Factor A": factor_A,
-            "Response": response.round(2)
+        factor_A_main = np.array([-1] * (n_runs_main//2) + [1] * (n_runs_main//2))
+        np.random.shuffle(factor_A_main)  # Randomize run order
+
+        # Generate response based on the definition E_A = y_high_avg - y_low_avg
+        # The coefficient (beta) is E_A / 2. So, y = base + beta * factor_A + noise
+        base_response_main = 50
+        response_main = base_response_main + (true_effect_size / 2.0) * factor_A_main + np.random.normal(0, noise_level_main, n_runs_main)
+
+        # Create a dataframe for display and calculation
+        exp_data_main = pd.DataFrame({
+            "Run": range(1, n_runs_main + 1),
+            "Factor_A": factor_A_main, # Use consistent column name
+            "Response": response_main.round(2)
         })
-        
+
+        # Calculate effect using the helper function (difference of averages)
+        calculated_effect_main = calculate_main_effect(exp_data_main, "Factor_A", "Response")
+        mean_plus_main = exp_data_main.loc[exp_data_main["Factor_A"] == 1, "Response"].mean()
+        mean_minus_main = exp_data_main.loc[exp_data_main["Factor_A"] == -1, "Response"].mean()
+
         with col2:
             st.markdown("**Experiment Data**")
-            st.dataframe(exp_data)
-        
+            st.dataframe(exp_data_main[["Run", "Factor_A", "Response"]])
+
         # Display calculated effects
         st.markdown("**Calculated Effect**")
         st.markdown(f"""
-        - Average response at high level (A+): {mean_plus:.2f}
-        - Average response at low level (A-): {mean_minus:.2f}
-        - Main effect of Factor A: {calculated_effect:.2f}
+        - Average response at high level (A+): {mean_plus_main:.2f}
+        - Average response at low level (A-): {mean_minus_main:.2f}
+        - **Main effect of Factor A (Difference): {calculated_effect_main:.2f}**
         """)
-        
+
         # Visualization of main effect
-        fig = go.Figure()
-        
+        fig_main = go.Figure()
+
         # Add data points
-        fig.add_trace(go.Scatter(
-            x=factor_A, 
-            y=response,
+        fig_main.add_trace(go.Scatter(
+            x=exp_data_main["Factor_A"],
+            y=exp_data_main["Response"],
             mode='markers',
             marker=dict(size=10, color='blue'),
             name='Experimental Results'
         ))
-        
-        # Add effect visualization
-        fig.add_trace(go.Scatter(
+
+        # Add effect visualization (line connecting averages)
+        fig_main.add_trace(go.Scatter(
             x=[-1, 1],
-            y=[mean_minus, mean_plus],
+            y=[mean_minus_main, mean_plus_main],
             mode='lines+markers',
             marker=dict(size=12, color='red'),
             line=dict(width=3, color='red', dash='dash'),
             name='Main Effect'
         ))
-        
-        fig.update_layout(
+
+        fig_main.update_layout(
             title="Visualization of Main Effect",
             xaxis=dict(
                 title="Factor A Level",
@@ -138,9 +160,11 @@ def show():
             yaxis=dict(title="Response"),
             height=400
         )
-        
-        st.plotly_chart(fig)
-        
+
+        st.plotly_chart(fig_main)
+
+        st.markdown("---") # Separator
+
         st.markdown("### Interaction Effect Calculation")
         st.markdown("""
         **Concept Anchor**: Interaction effects measure how the impact of one factor on the response depends on the level of another factor, revealing synergistic or antagonistic relationships common in biological systems.
@@ -148,52 +172,78 @@ def show():
         **Practical Lens**: In cell culture optimization, significant temperature-by-pH interactions inform operating parameters, as the optimal pH may vary with culture temperature. This interaction insight enables targeted optimization rather than independent factor adjustment.
 
         **Mathematical Foundation**:
-        The two-factor interaction effect for factors A and B is:
+        The two-factor interaction effect for factors A and B ($E_{AB}$) is half the difference between the effect of A when B is high and the effect of A when B is low:
 
-        $$E_{AB} = \\frac{\\sum_{i=1}^{n} x_{iA}x_{iB}y_i}{\\frac{n}{2}}$$
-
-        This can be rewritten as:
-
-        $$E_{AB} = \\frac{1}{2}[(\\bar{y}_{A+B+} - \\bar{y}_{A+B-}) - (\\bar{y}_{A-B+} - \\bar{y}_{A-B-})]$$
+        $$E_{AB} = \\frac{1}{2} [ (\\bar{y}_{A+B+} - \\bar{y}_{A-B+}) - (\\bar{y}_{A+B-} - \\bar{y}_{A-B-}) ]$$
 
         Where terms like $\\bar{y}_{A+B+}$ represent the average response when both factors are at their high levels.
+
+        Alternatively, using coded levels ($x_{iA}, x_{iB} = \\pm 1$) and $n$ runs:
+
+        $$E_{AB} = \\frac{\\sum_{i=1}^{n} (x_{iA}x_{iB})y_i}{n/2}$$
+
+        *Note: Both formulas yield the same result for orthogonal two-level designs.*
         """)
-        
+
         st.markdown("#### Interactive Interaction Effect Visualization")
-        
+
         # Setup for interaction effect demo
-        interaction_magnitude = st.slider("Interaction Magnitude", min_value=-10.0, max_value=10.0, value=5.0, step=0.5)
-        
+        interaction_magnitude = st.slider("True Interaction Magnitude (E_AB)", min_value=-10.0, max_value=10.0, value=5.0, step=0.5, key="interaction_mag")
+        n_runs_interaction = st.slider("Number of Runs (e.g., 2² design)", min_value=4, max_value=16, value=8, step=4, key="interaction_runs")
+        noise_level_interaction = st.slider("Noise Level (σ)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, key="interaction_noise")
+
         # Generate 2-factor experiment data
-        runs = 16
         np.random.seed(42)
-        factor_A = np.array([-1] * (runs//2) + [1] * (runs//2))
-        factor_B = np.tile(np.array([-1, -1, 1, 1]), runs//4)
-        np.random.shuffle(np.arange(runs))  # Generate a shuffle index
-        
-        # Main effects plus interaction
-        effect_A = 8.0  # Main effect of A
-        effect_B = 4.0  # Main effect of B
-        
-        # Generate response with interaction
-        base_response = 50.0
-        response = base_response + effect_A/2 * factor_A + effect_B/2 * factor_B + interaction_magnitude/2 * factor_A * factor_B
-        response += np.random.normal(0, 2.0, runs)  # Add noise
-        
-        # Calculate average responses for each factor combination
-        y_Aplus_Bplus = np.mean(response[(factor_A == 1) & (factor_B == 1)])
-        y_Aplus_Bminus = np.mean(response[(factor_A == 1) & (factor_B == -1)])
-        y_Aminus_Bplus = np.mean(response[(factor_A == -1) & (factor_B == 1)])
-        y_Aminus_Bminus = np.mean(response[(factor_A == -1) & (factor_B == -1)])
-        
-        # Calculate interaction effect
-        calc_interaction = 0.5 * ((y_Aplus_Bplus - y_Aplus_Bminus) - (y_Aminus_Bplus - y_Aminus_Bminus))
-        
+        # Ensure we have enough points for the design (e.g., 2^2 = 4, replicated if n_runs > 4)
+        replicates = n_runs_interaction // 4
+        if replicates < 1: replicates = 1
+        n_actual_runs = replicates * 4
+
+        factor_A_int = np.tile([-1, 1, -1, 1], replicates)
+        factor_B_int = np.tile([-1, -1, 1, 1], replicates)
+
+        # Shuffle if needed, but keep A and B paired correctly for calculation
+        shuffle_idx = np.random.permutation(n_actual_runs)
+        factor_A_int = factor_A_int[shuffle_idx]
+        factor_B_int = factor_B_int[shuffle_idx]
+
+        # Generate response based on the model y = base + beta_A*A + beta_B*B + beta_AB*A*B + noise
+        # Where beta = Effect / 2
+        effect_A_int = 8.0  # Fixed main effect of A for demo
+        effect_B_int = 4.0  # Fixed main effect of B for demo
+        base_response_int = 50.0
+
+        response_int = (base_response_int +
+                        (effect_A_int / 2.0) * factor_A_int +
+                        (effect_B_int / 2.0) * factor_B_int +
+                        (interaction_magnitude / 2.0) * factor_A_int * factor_B_int +
+                        np.random.normal(0, noise_level_interaction, n_actual_runs))
+
+        # Create dataframe for calculation and display
+        exp_data_int = pd.DataFrame({
+            "Run": range(1, n_actual_runs + 1),
+            "Factor_A": factor_A_int,
+            "Factor_B": factor_B_int,
+            "Response": response_int.round(2)
+        })
+
+        # Calculate interaction effect using the helper function
+        calc_interaction_effect = calculate_interaction_effect(exp_data_int, "Factor_A", "Factor_B", "Response")
+
+        # Calculate average responses for each factor combination for plotting
+        y_Aplus_Bplus = exp_data_int.loc[(exp_data_int["Factor_A"] == 1) & (exp_data_int["Factor_B"] == 1), "Response"].mean()
+        y_Aplus_Bminus = exp_data_int.loc[(exp_data_int["Factor_A"] == 1) & (exp_data_int["Factor_B"] == -1), "Response"].mean()
+        y_Aminus_Bplus = exp_data_int.loc[(exp_data_int["Factor_A"] == -1) & (exp_data_int["Factor_B"] == 1), "Response"].mean()
+        y_Aminus_Bminus = exp_data_int.loc[(exp_data_int["Factor_A"] == -1) & (exp_data_int["Factor_B"] == -1), "Response"].mean()
+
+        # Display data
+        st.dataframe(exp_data_int)
+
         # Create interaction plot
-        fig = go.Figure()
-        
+        fig_int = go.Figure()
+
         # B at low level
-        fig.add_trace(go.Scatter(
+        fig_int.add_trace(go.Scatter(
             x=[-1, 1],
             y=[y_Aminus_Bminus, y_Aplus_Bminus],
             mode='lines+markers',
@@ -201,9 +251,9 @@ def show():
             line=dict(width=2, color='blue'),
             name='B at Low Level (-1)'
         ))
-        
+
         # B at high level
-        fig.add_trace(go.Scatter(
+        fig_int.add_trace(go.Scatter(
             x=[-1, 1],
             y=[y_Aminus_Bplus, y_Aplus_Bplus],
             mode='lines+markers',
@@ -211,9 +261,9 @@ def show():
             line=dict(width=2, color='red'),
             name='B at High Level (+1)'
         ))
-        
-        fig.update_layout(
-            title=f"Interaction Effect: {calc_interaction:.2f}",
+
+        fig_int.update_layout(
+            title=f"Interaction Plot (Calculated E_AB: {calc_interaction_effect:.2f})",
             xaxis=dict(
                 title="Factor A Level",
                 tickvals=[-1, 1],
@@ -222,17 +272,21 @@ def show():
             yaxis=dict(title="Response"),
             height=400
         )
-        
-        st.plotly_chart(fig)
-        
+
+        st.plotly_chart(fig_int)
+
         st.markdown(f"""
         **Interpretation:**
-        
-        The interaction effect is {calc_interaction:.2f}. This means that the effect of factor A on the response is {abs(calc_interaction):.2f} {"higher" if calc_interaction > 0 else "lower"} when factor B is at its high level compared to when B is at its low level.
-        
+
+        The calculated interaction effect is {calc_interaction_effect:.2f}.
+        - A value far from zero suggests a strong interaction (non-parallel lines).
+        - A value close to zero suggests little to no interaction (lines are nearly parallel).
+
         In biological systems, interactions like this are common. For example, in fermentation processes, the effect of temperature on product yield often depends on the pH level, requiring simultaneous optimization of both factors.
         """)
-        
+
+        st.markdown("---") # Separator
+
         st.markdown("### Regression Coefficient Estimation")
         st.markdown("""
         **Concept Anchor**: Regression coefficients translate experimental effects into predictive models, allowing interpolation, extrapolation, and optimization across the design space.
@@ -253,15 +307,18 @@ def show():
 
         $$\\hat{\\beta}_j = \\frac{X_j^Ty}{X_j^TX_j}$$
 
-        The relationship between effects and coefficients is:
+        **Relationship between Effects and Coefficients (for coded -1/+1 factors):**
 
+        $$\\hat{\\beta}_0 = \\bar{y} \\quad \\text{(Intercept is the overall average response)}$$
         $$\\hat{\\beta}_j = \\frac{E_j}{2} \\quad \\text{(for main effects and interactions)}$$
+
+        *This means the coefficient represents half the change in response when moving from the center (0) to the high level (+1) of the corresponding coded factor/interaction.*
         """)
-    
+
     # Tab 2: Significance Testing
     with tabs[1]:
         st.subheader("Significance Testing")
-        
+
         st.markdown("""
         ### Analysis of Variance (ANOVA)
         **Concept Anchor**: ANOVA partitions total variation into components attributable to different factors and error, enabling statistical significance testing of effects.
@@ -275,7 +332,7 @@ def show():
 
         Where:
         - $SS_{Total} = \\sum_{i=1}^{n} (y_i - \\bar{y})^2$
-        - $SS_{Model} = \\sum_{i=1}^{n} (\\hat{y}_i - \\bar{y})^2$ 
+        - $SS_{Model} = \\sum_{i=1}^{n} (\\hat{y}_i - \\bar{y})^2$
         - $SS_{Error} = \\sum_{i=1}^{n} (y_i - \\hat{y}_i)^2$
 
         The model sum of squares can be further partitioned by effects:
@@ -284,113 +341,124 @@ def show():
 
         The F-statistic for testing factor A's significance is:
 
-        $$F_A = \\frac{SS_A/df_A}{SS_{Error}/df_{Error}}$$
+        $$F_A = \\frac{MS_A}{MS_{Error}} = \\frac{SS_A/df_A}{SS_{Error}/df_{Error}}$$
 
-        Where $df$ represents degrees of freedom.
+        Where $MS$ represents Mean Squares and $df$ represents degrees of freedom.
         """)
-        
+
         # Interactive ANOVA example
         st.markdown("#### Interactive ANOVA Example")
-        
+
         # Setup for ANOVA demo
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.markdown("**Experiment Parameters**")
-            effect_A = st.slider("Effect of Factor A", min_value=0.0, max_value=15.0, value=8.0, step=0.5, key="anova_effect_A")
-            effect_B = st.slider("Effect of Factor B", min_value=0.0, max_value=15.0, value=4.0, step=0.5, key="anova_effect_B") 
-            effect_AB = st.slider("A×B Interaction Effect", min_value=0.0, max_value=10.0, value=3.0, step=0.5, key="anova_effect_AB")
-            error_std = st.slider("Error Standard Deviation", min_value=0.5, max_value=10.0, value=2.0, step=0.5, key="anova_error")
-        
+            # Use effect sizes directly
+            effect_A_anova = st.slider("Effect of Factor A (E_A)", min_value=0.0, max_value=15.0, value=8.0, step=0.5, key="anova_effect_A")
+            effect_B_anova = st.slider("Effect of Factor B (E_B)", min_value=0.0, max_value=15.0, value=4.0, step=0.5, key="anova_effect_B")
+            effect_AB_anova = st.slider("A×B Interaction Effect (E_AB)", min_value=0.0, max_value=10.0, value=3.0, step=0.5, key="anova_effect_AB")
+            error_std_anova = st.slider("Error Standard Deviation (σ)", min_value=0.5, max_value=10.0, value=2.0, step=0.5, key="anova_error")
+
         # Generate 2-factor factorial data
         np.random.seed(42)
-        runs = 16  # 2^2 with 4 replicates
-        factor_A = np.repeat([-1, -1, 1, 1], 4)
-        factor_B = np.tile(np.repeat([-1, 1], 2), 4)
-        
-        # Generate response with specified effects
-        response = 50.0 + effect_A/2 * factor_A + effect_B/2 * factor_B + effect_AB/2 * factor_A * factor_B
-        response += np.random.normal(0, error_std, runs)
-        
+        runs_anova = 16  # 2^2 with 4 replicates
+        factor_A_anova = np.repeat([-1, 1, -1, 1], runs_anova//4) # Balanced design
+        factor_B_anova = np.repeat([-1, -1, 1, 1], runs_anova//4) # Balanced design
+
+        # Generate response with specified effects (using Effect/2 for coefficients)
+        response_anova = 50.0 + (effect_A_anova/2.0) * factor_A_anova + (effect_B_anova/2.0) * factor_B_anova + (effect_AB_anova/2.0) * factor_A_anova * factor_B_anova
+        response_anova += np.random.normal(0, error_std_anova, runs_anova)
+
         # Create dataframe for analysis
         anova_data = pd.DataFrame({
-            'A': factor_A,
-            'B': factor_B,
-            'AB': factor_A * factor_B,
-            'Response': response
+            'A': factor_A_anova,
+            'B': factor_B_anova,
+            'Response': response_anova
         })
-        
+        anova_data['AB'] = anova_data['A'] * anova_data['B'] # Calculate interaction term
+
         # Fit model using statsmodels
-        model = ols('Response ~ A + B + AB', data=anova_data).fit()
-        anova_table = sm.stats.anova_lm(model, typ=2)
-        
+        model_anova = ols('Response ~ A + B + AB', data=anova_data).fit()
+        anova_table = sm.stats.anova_lm(model_anova, typ=2) # Type 2 SS is generally preferred
+
         # Calculate Sums of Squares manually for educational purposes
-        SS_Total = np.sum((response - np.mean(response))**2)
-        SS_Model = np.sum((model.fittedvalues - np.mean(response))**2)
-        SS_Error = np.sum((response - model.fittedvalues)**2)
-        
+        SS_Total_anova = np.sum((response_anova - np.mean(response_anova))**2)
+        SS_Model_anova = np.sum((model_anova.fittedvalues - np.mean(response_anova))**2)
+        SS_Error_anova = np.sum((response_anova - model_anova.fittedvalues)**2)
+
         # Calculate R-squared
-        r_squared = SS_Model / SS_Total
-        
+        r_squared_anova = SS_Model_anova / SS_Total_anova
+
         with col2:
             st.markdown("**ANOVA Table**")
-            
+
             # Format the ANOVA table for display
             formatted_anova = anova_table.copy()
             formatted_anova['F'] = formatted_anova['F'].round(3)
             formatted_anova['PR(>F)'] = formatted_anova['PR(>F)'].round(4)
-            formatted_anova.columns = ['DF', 'Sum Sq', 'Mean Sq', 'F-value', 'p-value']
-            
-            st.dataframe(formatted_anova)
-            
+            formatted_anova.columns = ['Sum Sq', 'DF', 'F-value', 'p-value'] # Reorder slightly
+            formatted_anova = formatted_anova[['DF', 'Sum Sq', 'F-value', 'p-value']] # Select columns
+            formatted_anova['Mean Sq'] = formatted_anova['Sum Sq'] / formatted_anova['DF'] # Calculate Mean Square
+            formatted_anova = formatted_anova[['DF', 'Sum Sq', 'Mean Sq', 'F-value', 'p-value']] # Final order
+
+            st.dataframe(formatted_anova.style.format({
+                'Sum Sq': '{:.2f}',
+                'Mean Sq': '{:.2f}',
+                'F-value': '{:.3f}',
+                'p-value': '{:.4g}'
+            }).background_gradient(subset=['p-value'], cmap='Reds_r'))
+
             st.markdown(f"""
             **Model Statistics**:
-            - R² = {r_squared:.4f}
-            - $SS_{Total}$ = {SS_Total:.2f}
-            - $SS_{Model}$ = {SS_Model:.2f}
-            - $SS_{Error}$ = {SS_Error:.2f}
+            - R² = {r_squared_anova:.4f}
+            - $SS_{Total}$ = {SS_Total_anova:.2f}
+            - $SS_{Model}$ = {SS_Model_anova:.2f}
+            - $SS_{Error}$ = {SS_Error_anova:.2f}
             """)
-        
+
         # Create effect visualization
         st.markdown("**Visualizing ANOVA Components**")
-        
+
         # Create bar chart of effects and their significance
-        effect_names = ['A', 'B', 'AB']
-        effect_values = [effect_A, effect_B, effect_AB]
-        p_values = anova_table['PR(>F)'].values
-        
-        fig = px.bar(
-            x=effect_names, 
-            y=effect_values,
-            color=p_values,
-            color_continuous_scale='RdYlGn_r',
-            labels={'x': 'Effect', 'y': 'Effect Size', 'color': 'p-value'},
+        effect_names_anova = ['A', 'B', 'AB']
+        effect_values_anova = [effect_A_anova, effect_B_anova, effect_AB_anova] # Use the input effect sizes
+        p_values_anova = anova_table['PR(>F)'].values[:-1] # Exclude residual p-value
+
+        # Create DataFrame for Plotly Express
+        plot_df_anova = pd.DataFrame({
+            'Effect Term': effect_names_anova,
+            'Effect Size': effect_values_anova,
+            'p-value': p_values_anova
+        })
+
+        fig_anova = px.bar(
+            plot_df_anova,
+            x='Effect Term',
+            y='Effect Size',
+            color='p-value',
+            color_continuous_scale='RdYlGn_r', # Red = significant (low p), Green = insignificant (high p)
+            color_continuous_midpoint=0.05, # Set midpoint for color scale
+            labels={'Effect Term': 'Effect Term', 'Effect Size': 'Effect Size (E)', 'color': 'p-value'},
             title="Effects and Their Statistical Significance"
         )
-        
-        # Add reference line for visual significance assessment
-        fig.add_shape(
-            type="line",
-            x0=-0.5, x1=2.5,
-            y0=2*error_std, y1=2*error_std,
-            line=dict(color="red", width=2, dash="dash"),
-            name="Critical Effect Size"
-        )
-        
-        st.plotly_chart(fig)
-        
+
+        st.plotly_chart(fig_anova)
+
         st.markdown(f"""
         **Interpretation:**
-        
-        The ANOVA table shows how the total variation in the response is partitioned into components due to factors A, B, their interaction, and random error. 
-        
-        - Factor A has {"a significant" if p_values[0] < 0.05 else "an insignificant"} effect (p = {p_values[0]:.4f})
-        - Factor B has {"a significant" if p_values[1] < 0.05 else "an insignificant"} effect (p = {p_values[1]:.4f})
-        - The A×B interaction is {"significant" if p_values[2] < 0.05 else "insignificant"} (p = {p_values[2]:.4f})
-        
+
+        The ANOVA table shows how the total variation in the response is partitioned into components due to factors A, B, their interaction, and random error.
+
+        - Factor A has {"a significant" if p_values_anova[0] < 0.05 else "an insignificant"} effect (p = {p_values_anova[0]:.4f})
+        - Factor B has {"a significant" if p_values_anova[1] < 0.05 else "an insignificant"} effect (p = {p_values_anova[1]:.4f})
+        - The A×B interaction is {"significant" if p_values_anova[2] < 0.05 else "insignificant"} (p = {p_values_anova[2]:.4f})
+
         In biotechnology applications, significant effects identify critical process parameters that require careful control during manufacturing.
         """)
-        
+
+        st.markdown("---") # Separator
+
         st.markdown("### Effect Plots and Half-Normal Plots")
         st.markdown("""
         **Concept Anchor**: Effect plots and half-normal plots provide visual methods for identifying significant effects, particularly useful in screening experiments with many factors.
@@ -398,7 +466,7 @@ def show():
         **Practical Lens**: In upstream process screening, half-normal plots rapidly identify the vital few parameters from the trivial many, revealing that dissolved oxygen and feed rate significantly impact product titer while several other parameters show negligible effects.
 
         **Mathematical Approach**:
-        1. **Pareto Plot of Effects**: 
+        1. **Pareto Plot of Effects**:
            - Plot absolute effect size vs. factors
            - Include significance threshold
            - Sort effects in descending order
@@ -408,124 +476,127 @@ def show():
            - Effects that deviate from the straight line are potentially significant
            - For ordered absolute effects $|E_{(1)}| \\leq |E_{(2)}| \\leq ... \\leq |E_{(m)}|$, plot points:
              $$\\left(z_{(i)}, |E_{(i)}|\\right)$$
-             Where $z_{(i)} = \\Phi^{-1}\\left(\\frac{i+n-0.5}{2m+n}\\right)$ and $\\Phi^{-1}$ is the inverse normal CDF
+             Where $z_{(i)} = \\Phi^{-1}\\left(\\frac{i+m-0.5}{2m}\\right)$ and $\\Phi^{-1}$ is the inverse standard normal CDF. *Note: Formula adjusted slightly for standard half-normal plotting.*
         """)
-        
+
         # Demo of half-normal plot
         st.markdown("#### Interactive Half-Normal Plot Example")
-        
+
         # Generate effect data for half-normal plot
         np.random.seed(23)
-        
+
         # Number of effects to simulate
-        n_effects = st.slider("Number of Effects", min_value=5, max_value=15, value=7, step=1)
-        
+        n_effects_hnp = st.slider("Number of Effects", min_value=5, max_value=15, value=7, step=1, key="hnp_effects")
+
         # Generate effects: a few significant, most are noise
-        true_effects = np.zeros(n_effects)
-        
+        true_effects_hnp = np.zeros(n_effects_hnp)
+
         # Set 2-3 effects to be significant
-        num_sig = 3 if n_effects >= 7 else min(2, n_effects)
-        sig_indices = np.random.choice(n_effects, num_sig, replace=False)
-        true_effects[sig_indices] = np.random.uniform(5, 15, num_sig)
-        
+        num_sig_hnp = 3 if n_effects_hnp >= 7 else min(2, n_effects_hnp)
+        sig_indices_hnp = np.random.choice(n_effects_hnp, num_sig_hnp, replace=False)
+        true_effects_hnp[sig_indices_hnp] = np.random.uniform(5, 15, num_sig_hnp) * np.random.choice([-1, 1], num_sig_hnp) # Add sign
+
         # Add noise to all effects
-        observed_effects = true_effects + np.random.normal(0, 1.5, n_effects)
-        
-        # Effect names (A, B, C, AB, AC, etc.)
-        effect_names = list("ABCDEFGHIJKLMNO"[:n_effects])
-        
+        observed_effects_hnp = true_effects_hnp + np.random.normal(0, 1.5, n_effects_hnp)
+
+        # Effect names (A, B, C, AB, AC, etc.) - Simplified for demo
+        effect_names_hnp = [f"Effect_{chr(65+i)}" for i in range(n_effects_hnp)]
+
         # Create half-normal plot
-        abs_effects = np.abs(observed_effects)
-        sorted_indices = np.argsort(abs_effects)
-        sorted_abs_effects = abs_effects[sorted_indices]
-        sorted_names = [effect_names[i] for i in sorted_indices]
-        
+        abs_effects_hnp = np.abs(observed_effects_hnp)
+        sorted_indices_hnp = np.argsort(abs_effects_hnp)
+        sorted_abs_effects_hnp = abs_effects_hnp[sorted_indices_hnp]
+        sorted_names_hnp = [effect_names_hnp[i] for i in sorted_indices_hnp]
+
         # Calculate half-normal quantiles
-        p_points = (np.arange(1, n_effects + 1) - 0.5) / (2 * n_effects)
-        z_points = stats.norm.ppf((1 + p_points) / 2)
-        
+        p_points_hnp = (np.arange(1, n_effects_hnp + 1) - 0.5) / n_effects_hnp # Standard formula
+        z_points_hnp = stats.norm.ppf((1 + p_points_hnp) / 2)
+
         # Create dataframe for plotting
         hnp_data = pd.DataFrame({
-            'Effect': sorted_names,
-            'AbsoluteEffect': sorted_abs_effects,
-            'HalfNormalQuantile': z_points,
-            'IsSignificant': np.isin(sorted_indices, sig_indices)
+            'Effect': sorted_names_hnp,
+            'AbsoluteEffect': sorted_abs_effects_hnp,
+            'HalfNormalQuantile': z_points_hnp,
+            'IsSignificant': np.isin(sorted_indices_hnp, sig_indices_hnp) # Mark the truly significant ones
         })
-        
-        # Create half-normal plot
-        fig = px.scatter(
-            hnp_data, 
+
+        # Create half-normal plot using Plotly Express
+        fig_hnp = px.scatter(
+            hnp_data,
             x='HalfNormalQuantile',
             y='AbsoluteEffect',
             text='Effect',
-            color='IsSignificant',
+            color='IsSignificant', # Color based on whether it was truly significant
             color_discrete_map={True: 'red', False: 'blue'},
-            labels={'HalfNormalQuantile': 'Half-Normal Quantile', 'AbsoluteEffect': 'Absolute Effect', 'IsSignificant': 'Significant'},
+            labels={'HalfNormalQuantile': 'Half-Normal Quantile (z)', 'AbsoluteEffect': 'Absolute Effect |E|', 'IsSignificant': 'Truly Significant'},
             title="Half-Normal Plot of Effects"
         )
-        
-        # Add line representing noise (using the smallest 50% of effects)
-        n_noise = n_effects // 2
-        noise_x = z_points[:n_noise]
-        noise_y = sorted_abs_effects[:n_noise]
-        
-        # Simple linear regression through the noise points
-        slope, intercept = np.polyfit(noise_x, noise_y, 1)
-        
-        # Add trend line
-        x_trend = np.linspace(0, max(z_points), 100)
-        y_trend = slope * x_trend + intercept
-        
-        fig.add_trace(go.Scatter(
-            x=x_trend,
-            y=y_trend,
-            mode='lines',
-            line=dict(color='gray', dash='dash'),
-            name='Noise Trend'
-        ))
-        
-        fig.update_traces(textposition='top right')
-        
-        st.plotly_chart(fig)
-        
+
+        # Add line representing noise (using robust estimate - Lenth's PSE)
+        # Lenth's method is common for analyzing unreplicated factorials
+        try:
+            s0 = 1.5 * np.median(abs_effects_hnp)
+            pseudo_std_err = 1.5 * np.median(abs_effects_hnp[abs_effects_hnp < 2.5 * s0])
+            # Add a line based on this pseudo standard error
+            x_trend_hnp = np.linspace(0, max(z_points_hnp), 100)
+            y_trend_hnp = pseudo_std_err * x_trend_hnp # Line through origin with slope = PSE
+
+            fig_hnp.add_trace(go.Scatter(
+                x=x_trend_hnp,
+                y=y_trend_hnp,
+                mode='lines',
+                line=dict(color='gray', dash='dash'),
+                name='Noise Trend (Lenth PSE)'
+            ))
+        except:
+            st.warning("Could not calculate Lenth's PSE for noise trend line.")
+
+
+        fig_hnp.update_traces(textposition='top right')
+        st.plotly_chart(fig_hnp)
+
         # Show Pareto chart of effects
-        pareto_data = pd.DataFrame({
-            'Effect': effect_names,
-            'AbsoluteEffect': abs_effects,
-            'IsSignificant': np.isin(np.arange(n_effects), sig_indices)
+        pareto_data_hnp = pd.DataFrame({
+            'Effect': effect_names_hnp,
+            'AbsoluteEffect': abs_effects_hnp,
+            'IsSignificant': np.isin(np.arange(n_effects_hnp), sig_indices_hnp)
         }).sort_values('AbsoluteEffect', ascending=False)
-        
-        fig_pareto = px.bar(
-            pareto_data,
+
+        fig_pareto_hnp = px.bar(
+            pareto_data_hnp,
             x='Effect',
             y='AbsoluteEffect',
             color='IsSignificant',
             color_discrete_map={True: 'red', False: 'blue'},
             title="Pareto Chart of Effects"
         )
-        
-        # Add reference line for significance threshold
-        threshold = 2 * np.std(sorted_abs_effects[:n_noise])
-        fig_pareto.add_shape(
-            type="line",
-            x0=-0.5, x1=n_effects-0.5,
-            y0=threshold, y1=threshold,
-            line=dict(color="red", width=2, dash="dash"),
-            name="Significance Threshold"
-        )
-        
-        st.plotly_chart(fig_pareto)
-        
+
+        # Add reference line for significance threshold (e.g., Lenth's ME)
+        try:
+            margin_error = stats.t.ppf(1 - 0.05 / 2, df=n_effects_hnp // 3) * pseudo_std_err # Approximate df
+            fig_pareto_hnp.add_shape(
+                type="line",
+                x0=-0.5, x1=n_effects_hnp-0.5,
+                y0=margin_error, y1=margin_error,
+                line=dict(color="red", width=2, dash="dash"),
+                name="Significance Threshold (Lenth ME)"
+            )
+        except:
+            pass # Skip if PSE calculation failed
+
+        st.plotly_chart(fig_pareto_hnp)
+
         st.markdown("""
         **Interpretation:**
-        
-        - **Half-Normal Plot**: Effects that fall along the dashed line are consistent with noise, while effects that deviate from the line are potentially significant.
-        
-        - **Pareto Chart**: Displays the absolute effect sizes in descending order, with the dashed line representing a significance threshold.
-        
+
+        - **Half-Normal Plot**: Effects falling along the dashed line are consistent with noise, while effects deviating significantly (often colored red if truly significant in this demo) are likely real effects.
+        - **Pareto Chart**: Displays the absolute effect sizes in descending order. Effects exceeding the significance threshold (red dashed line) are typically considered statistically significant.
+
         In biotechnology applications, these plots help researchers quickly identify the vital few parameters that most strongly influence a bioprocess or analytical method, directing focus to the critical factors.
         """)
-        
+
+        st.markdown("---") # Separator
+
         st.markdown("### Effect Sparsity and Model Reduction")
         st.markdown("""
         **Concept Anchor**: Effect sparsity principle posits that most systems are driven by a relatively small number of main effects and low-order interactions, enabling model simplification without sacrificing predictive power.
@@ -533,182 +604,189 @@ def show():
         **Practical Lens**: In a 32-run vaccine formulation study with 5 factors, applying effect sparsity principles reveals that only 3 main effects and 2 two-factor interactions significantly affect stability, allowing focused optimization on these critical parameters.
 
         **Methodological Approach**:
-        1. **Backward Elimination**:
-           - Start with full model including all terms
-           - Sequentially remove least significant terms based on p-values
-           - Stop when all remaining terms are significant
-
-        2. **Forward Selection**:
-           - Start with intercept-only model
-           - Add most significant terms one at a time
-           - Stop when no remaining term is significant when added
-
-        3. **Stepwise Regression**:
-           - Combination of forward and backward approaches
-           - Reconsider previously eliminated terms at each step
-
-        4. **Information Criteria**:
-           - AIC (Akaike Information Criterion): $AIC = 2k - 2\\ln(L)$
-           - BIC (Bayesian Information Criterion): $BIC = k\\ln(n) - 2\\ln(L)$
-           - Where $k$ is the number of parameters, $L$ is the likelihood, and $n$ is sample size
+        1. **Backward Elimination**: Start with full model, sequentially remove least significant terms (highest p-value > threshold).
+        2. **Forward Selection**: Start with intercept, add most significant terms one by one (lowest p-value < threshold).
+        3. **Stepwise Regression**: Combination of forward and backward steps.
+        4. **Information Criteria**: Select model minimizing AIC (Akaike Information Criterion) or BIC (Bayesian Information Criterion).
+           - $AIC = 2k - 2\\ln(L)$
+           - $BIC = k\\ln(n) - 2\\ln(L)$
+           - Where $k$ is number of parameters, $L$ is likelihood, $n$ is sample size. Lower values are better.
         """)
-        
+
         # Model reduction demo
         st.markdown("#### Interactive Model Reduction Example")
-        
+
         # Generate data for model reduction example
         np.random.seed(42)
-        n_runs = 32
-        n_factors = 5
-        
-        # Create factor columns (A-E)
-        factor_names = list("ABCDE")
-        factor_data = {}
-        
-        for i, name in enumerate(factor_names):
-            pattern_length = 2**(n_factors - i - 1)
-            pattern = np.array([-1] * pattern_length + [1] * pattern_length)
-            repeats = n_runs // (2 * pattern_length)
-            factor_data[name] = np.tile(pattern, repeats)
-        
+        n_runs_mr = 32
+        n_factors_mr = 5
+
+        # Create factor columns (A-E) using standard order generation
+        factor_names_mr = list("ABCDE")
+        factor_data_mr = {}
+
+        for i, name in enumerate(factor_names_mr):
+            # Pattern length doubles for each factor
+            pattern_length = 2**(n_factors_mr - 1 - i)
+            # Create the repeating pattern of -1s and 1s
+            pattern = np.repeat([-1, 1], pattern_length)
+            # Tile the pattern to fill the column
+            repeats = n_runs_mr // (2 * pattern_length)
+            factor_data_mr[name] = np.tile(pattern, repeats)
+
         # Add 2-factor interactions
-        for i, j in combinations(range(n_factors), 2):
-            name_i = factor_names[i]
-            name_j = factor_names[j]
+        interaction_terms_mr = []
+        for i, j in combinations(range(n_factors_mr), 2):
+            name_i = factor_names_mr[i]
+            name_j = factor_names_mr[j]
             interaction_name = f"{name_i}{name_j}"
-            factor_data[interaction_name] = factor_data[name_i] * factor_data[name_j]
-        
+            interaction_terms_mr.append(interaction_name)
+            factor_data_mr[interaction_name] = factor_data_mr[name_i] * factor_data_mr[name_j]
+
         # Define active effects (using sparsity principle)
         # In this case: A, C, E, AC, and AE are active
-        active_effects = ['A', 'C', 'E', 'AC', 'AE']
-        effect_sizes = {
+        active_effects_mr = ['A', 'C', 'E', 'AC', 'AE']
+        effect_sizes_mr = {
             'A': 10.0,
             'C': 7.5,
             'E': 5.0,
             'AC': 4.0,
             'AE': 3.0
         }
-        
-        # Generate response
-        response = np.ones(n_runs) * 50.0  # Base response
-        for effect, size in effect_sizes.items():
-            if len(effect) == 1:  # Main effect
-                response += size/2 * factor_data[effect]
-            else:  # Interaction
-                response += size/2 * factor_data[effect]
-        
+
+        # Generate response (using Effect/2 for coefficients)
+        response_mr = np.ones(n_runs_mr) * 50.0  # Base response
+        for effect, size in effect_sizes_mr.items():
+            response_mr += (size / 2.0) * factor_data_mr[effect]
+
         # Add noise
-        noise_level = st.slider("Noise Level (σ)", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="model_reduction_noise")
-        response += np.random.normal(0, noise_level, n_runs)
-        
+        noise_level_mr = st.slider("Noise Level (σ)", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="model_reduction_noise")
+        response_mr += np.random.normal(0, noise_level_mr, n_runs_mr)
+
         # Create full dataframe for analysis
-        model_data = pd.DataFrame(factor_data)
-        model_data['Response'] = response
-        
+        model_data_mr = pd.DataFrame(factor_data_mr)
+        model_data_mr['Response'] = response_mr
+
         # Fit full model
-        formula_full = "Response ~ " + " + ".join(model_data.columns[:-1])
-        full_model = ols(formula_full, data=model_data).fit()
-        
+        all_terms_mr = factor_names_mr + interaction_terms_mr
+        formula_full_mr = "Response ~ " + " + ".join(all_terms_mr)
+        full_model_mr = ols(formula_full_mr, data=model_data_mr).fit()
+
         # Display full model summary
-        full_summary = pd.DataFrame({
-            'Term': full_model.params.index,
-            'Coefficient': full_model.params.values,
-            'Std Error': full_model.bse.values,
-            't-value': full_model.tvalues.values,
-            'p-value': full_model.pvalues.values
+        # Calculate Effect = 2 * Coefficient
+        full_summary_mr_df = pd.DataFrame({
+            'Coefficient': full_model_mr.params,
+            'Std Error': full_model_mr.bse,
+            't-value': full_model_mr.tvalues,
+            'p-value': full_model_mr.pvalues
         })
-        
+        full_summary_mr_df['Effect'] = full_summary_mr_df['Coefficient'] * 2
+        full_summary_mr_df.loc['Intercept', 'Effect'] = full_summary_mr_df.loc['Intercept', 'Coefficient'] # Intercept is not doubled
+        full_summary_mr_df = full_summary_mr_df[['Effect', 'Coefficient', 'Std Error', 't-value', 'p-value']] # Reorder
+
+
         st.markdown("**Full Model Summary**")
-        st.dataframe(full_summary.style.format({
+        st.dataframe(full_summary_mr_df.style.format({
+            'Effect': '{:.4f}',
             'Coefficient': '{:.4f}',
             'Std Error': '{:.4f}',
             't-value': '{:.3f}',
             'p-value': '{:.4f}'
-        }))
-        
+        }).background_gradient(subset=['p-value'], cmap='Reds_r'))
+
         # Perform model reduction via backward elimination
-        p_threshold = st.slider("p-value Threshold for Term Inclusion", min_value=0.01, max_value=0.2, value=0.05, step=0.01)
-        
-        # Manually perform backward elimination
-        significant_terms = full_summary[full_summary['p-value'] <= p_threshold]['Term'].tolist()
-        
-        # Remove Intercept from list for formula building
-        if 'Intercept' in significant_terms:
-            significant_terms.remove('Intercept')
-        
-        # Check if any terms remain
-        if significant_terms:
-            reduced_formula = "Response ~ " + " + ".join(significant_terms)
-            reduced_model = ols(reduced_formula, data=model_data).fit()
-            
+        p_threshold_mr = st.slider("p-value Threshold for Term Inclusion", min_value=0.01, max_value=0.2, value=0.05, step=0.01, key="mr_p_thresh")
+
+        # Manually perform backward elimination based on p-value
+        significant_terms_mr = full_summary_mr_df[full_summary_mr_df['p-value'] <= p_threshold_mr].index.tolist()
+
+        # Remove Intercept from list for formula building, if present
+        if 'Intercept' in significant_terms_mr:
+            significant_terms_mr.remove('Intercept')
+
+        # Check if any terms remain significant
+        if significant_terms_mr:
+            reduced_formula_mr = "Response ~ " + " + ".join(significant_terms_mr)
+            reduced_model_mr = ols(reduced_formula_mr, data=model_data_mr).fit()
+
             # Display reduced model summary
-            reduced_summary = pd.DataFrame({
-                'Term': reduced_model.params.index,
-                'Coefficient': reduced_model.params.values,
-                'Std Error': reduced_model.bse.values,
-                't-value': reduced_model.tvalues.values,
-                'p-value': reduced_model.pvalues.values
+            # Calculate Effect = 2 * Coefficient
+            reduced_summary_mr_df = pd.DataFrame({
+                'Coefficient': reduced_model_mr.params,
+                'Std Error': reduced_model_mr.bse,
+                't-value': reduced_model_mr.tvalues,
+                'p-value': reduced_model_mr.pvalues
             })
-            
-            st.markdown(f"**Reduced Model (p ≤ {p_threshold})**")
-            st.dataframe(reduced_summary.style.format({
+            reduced_summary_mr_df['Effect'] = reduced_summary_mr_df['Coefficient'] * 2
+            reduced_summary_mr_df.loc['Intercept', 'Effect'] = reduced_summary_mr_df.loc['Intercept', 'Coefficient'] # Intercept is not doubled
+            reduced_summary_mr_df = reduced_summary_mr_df[['Effect', 'Coefficient', 'Std Error', 't-value', 'p-value']] # Reorder
+
+            st.markdown(f"**Reduced Model (p ≤ {p_threshold_mr})**")
+            st.dataframe(reduced_summary_mr_df.style.format({
+                'Effect': '{:.4f}',
                 'Coefficient': '{:.4f}',
                 'Std Error': '{:.4f}',
                 't-value': '{:.3f}',
                 'p-value': '{:.4f}'
-            }))
-            
+            }).background_gradient(subset=['p-value'], cmap='Reds_r'))
+
             # Compare models
             col1, col2 = st.columns(2)
-            
+
             with col1:
                 st.markdown("**Full Model**")
-                st.metric("R²", f"{full_model.rsquared:.4f}")
-                st.metric("Adjusted R²", f"{full_model.rsquared_adj:.4f}")
-                st.metric("AIC", f"{full_model.aic:.2f}")
-                st.metric("BIC", f"{full_model.bic:.2f}")
-                st.metric("Parameters", f"{len(full_model.params)}")
-            
+                st.metric("R²", f"{full_model_mr.rsquared:.4f}")
+                st.metric("Adjusted R²", f"{full_model_mr.rsquared_adj:.4f}")
+                st.metric("AIC", f"{full_model_mr.aic:.2f}")
+                st.metric("BIC", f"{full_model_mr.bic:.2f}")
+                st.metric("Parameters", f"{len(full_model_mr.params)}")
+
             with col2:
                 st.markdown("**Reduced Model**")
-                st.metric("R²", f"{reduced_model.rsquared:.4f}")
-                st.metric("Adjusted R²", f"{reduced_model.rsquared_adj:.4f}")
-                st.metric("AIC", f"{reduced_model.aic:.2f}")
-                st.metric("BIC", f"{reduced_model.bic:.2f}")
-                st.metric("Parameters", f"{len(reduced_model.params)}")
-            
-            # Model comparison test
-            model_comparison = full_model.compare_f_test(reduced_model)
-            
-            st.markdown("**Model Comparison Test**")
-            st.markdown(f"""
-            - F-statistic: {model_comparison[0]:.4f}
-            - p-value: {model_comparison[1]:.4f}
-            
-            Interpretation: The reduced model is {"significantly worse than" if model_comparison[1] < 0.05 else "not significantly different from"} the full model.
-            """)
-            
+                st.metric("R²", f"{reduced_model_mr.rsquared:.4f}")
+                st.metric("Adjusted R²", f"{reduced_model_mr.rsquared_adj:.4f}")
+                st.metric("AIC", f"{reduced_model_mr.aic:.2f}")
+                st.metric("BIC", f"{reduced_model_mr.bic:.2f}")
+                st.metric("Parameters", f"{len(reduced_model_mr.params)}")
+
+            # Model comparison test (only if models are different)
+            if len(reduced_model_mr.params) < len(full_model_mr.params):
+                try:
+                    # Use compare_f_test for nested models
+                    f_stat_comp, p_value_comp, _ = full_model_mr.compare_f_test(reduced_model_mr)
+
+                    st.markdown("**Model Comparison Test (Full vs. Reduced)**")
+                    st.markdown(f"""
+                    - F-statistic: {f_stat_comp:.4f}
+                    - p-value: {p_value_comp:.4g}
+
+                    Interpretation: A low p-value (< 0.05) suggests the full model provides a significantly better fit than the reduced model (i.e., removing terms significantly worsened the fit). A high p-value suggests the reduced model is adequate.
+                    """)
+                except Exception as e:
+                    st.warning(f"Could not perform model comparison test: {e}")
+
+
             # Compare with active effects
-            correct_identifications = sum(1 for term in significant_terms if term in active_effects)
-            false_positives = sum(1 for term in significant_terms if term not in active_effects)
-            false_negatives = sum(1 for term in active_effects if term not in significant_terms)
-            
+            correct_identifications_mr = sum(1 for term in significant_terms_mr if term in active_effects_mr)
+            false_positives_mr = sum(1 for term in significant_terms_mr if term not in active_effects_mr)
+            false_negatives_mr = sum(1 for term in active_effects_mr if term not in significant_terms_mr)
+
             st.markdown("**Model Reduction Effectiveness**")
             st.markdown(f"""
-            - Correctly identified active effects: {correct_identifications}/{len(active_effects)}
-            - False positives (inactive effects in model): {false_positives}
-            - False negatives (active effects missed): {false_negatives}
+            - Correctly identified active effects: {correct_identifications_mr}/{len(active_effects_mr)}
+            - False positives (inactive effects included): {false_positives_mr}
+            - False negatives (active effects missed): {false_negatives_mr}
             """)
-            
+
         else:
-            st.warning("No terms met the significance threshold. Consider increasing the p-value threshold.")
-    
+            st.warning("No terms met the significance threshold. The reduced model is just the intercept. Consider increasing the p-value threshold or re-evaluating the experiment.")
+
     # Tab 3: Model Diagnostics
     with tabs[2]:
         st.subheader("Model Diagnostics")
         
+        st.markdown("### Residual Analysis")
         st.markdown("""
-        ### Residual Analysis
         **Concept Anchor**: Residual analysis examines differences between observed and predicted values to validate model assumptions and identify potential issues in experimental data.
 
         **Practical Lens**: In bioreactor scale-up studies, residual analysis reveals heteroscedasticity at higher cell densities, indicating that a log transformation of the response improves model validity and prediction accuracy across the scale-up range.
@@ -1218,11 +1296,11 @@ def show():
         **Mathematical Foundation**:
         The full quadratic model for k factors is:
 
-        $$y = \\beta_0 + \\sum_{i=1}^{k} \\beta_i x_i + \\sum_{i=1}^{k} \\beta_{ii} x_i^2 + \\sum_{i<j}^{k} \\beta_{ij} x_i x_j + \\varepsilon$$
+        $y = \\beta_0 + \\sum_{i=1}^{k} \\beta_i x_i + \\sum_{i=1}^{k} \\beta_{ii} x_i^2 + \\sum_{i<j}^{k} \\beta_{ij} x_i x_j + \\varepsilon$
 
         The fitted model provides predictions:
 
-        $$\\hat{y} = \\hat{\\beta}_0 + \\sum_{i=1}^{k} \\hat{\\beta}_i x_i + \\sum_{i=1}^{k} \\hat{\\beta}_{ii} x_i^2 + \\sum_{i<j}^{k} \\hat{\\beta}_{ij} x_i x_j$$
+        $\\hat{y} = \\hat{\\beta}_0 + \\sum_{i=1}^{k} \\hat{\\beta}_i x_i + \\sum_{i=1}^{k} \\hat{\\beta}_{ii} x_i^2 + \\sum_{i<j}^{k} \\hat{\\beta}_{ij} x_i x_j$
 
         Model quality is assessed via:
         - $R^2 = 1 - \\frac{SS_{Error}}{SS_{Total}}$
@@ -3953,7 +4031,6 @@ def doe_analysis_workflow():
                         pred_df[f"{f}_coded"] = 0
                 
                 # Create interaction terms if needed
-                # Create interaction terms if needed
                 for i, j in combinations(range(len(factor_cols)), 2):
                     f1 = f"{factor_cols[i]}_coded"
                     f2 = f"{factor_cols[j]}_coded"
@@ -3989,10 +4066,7 @@ def doe_analysis_workflow():
                             x=x1_grid,
                             y=x2_grid,
                             colorscale='Viridis',
-                            contours=dict(
-                                showlabels=True,
-                                labelfont=dict(size=12, color='white')
-                            ),
+                            contours=dict(showlabels=True),
                             colorbar=dict(title=response)
                         ))
                         
@@ -4729,7 +4803,7 @@ def doe_analysis_workflow():
                             contours=dict(
                                 start=0,
                                 end=1,
-                                coloring='lines',
+                                coloring='fill',
                                 showlabels=True
                             ),
                             colorscale=['white', 'green'],
@@ -4928,3 +5002,48 @@ def doe_analysis_workflow():
                 except Exception as e:
                     st.error(f"Error generating design space: {e}")
                     st.exception(e)
+
+                st.markdown("""
+                **Applications in Biotech Regulatory Context:**
+                
+                Design space mapping is a key element of Quality by Design (QbD) submissions to regulatory agencies. It demonstrates:
+                
+                1. **Process Understanding**: The relationship between process parameters and quality attributes
+                2. **Risk Assessment**: The impact of parameter variability on product quality
+                3. **Control Strategy**: The rationale for parameter ranges and control points
+                4. **Operational Flexibility**: The ability to operate within a validated space rather than at fixed setpoints
+                
+                For biopharmaceutical products, well-defined design spaces enable:
+                - Faster approval of manufacturing changes
+                - Reduced post-approval variation filings
+                - More robust manufacturing with consistent product quality
+                """)
+                
+                st.markdown("### Robustness Analysis")
+                st.markdown("""
+                **Concept Anchor**: Robustness analysis assesses process sensitivity to uncontrolled variations, quantifying the impact of factor perturbations on critical quality attributes and process performance.
+
+                **Practical Lens**: In biopharmaceutical lyophilization, robustness analysis reveals that shelf temperature variations of ±2°C significantly impact product moisture content, leading to tighter equipment qualification requirements and more stringent in-process controls.
+
+                **Methodological Approaches**:
+                1. **Sensitivity Analysis**:
+                   - Partial derivatives: $\\frac{\\partial \\hat{y}}{\\partial x_i}$
+                   - Normalized sensitivity: $\\frac{x_i}{\\hat{y}} \\cdot \\frac{\\partial \\hat{y}}{\\partial x_i}$
+                   - Tolerance analysis: Impact of factor variation $\\Delta x_i$ on response
+                     $\\Delta \\hat{y} \\approx \\sum_{i=1}^{k} \\frac{\\partial \\hat{y}}{\\partial x_i} \\Delta x_i$
+
+                2. **Monte Carlo Simulation**:
+                   - Define probability distributions for factor variations
+                   - Generate random samples from these distributions
+                   - Predict responses for each sample
+                   - Characterize output distribution and failure probability
+
+                3. **Edge of Failure Analysis**:
+                   - Identify combinations of factors at boundary of acceptable performance
+                   - Calculate distance to failure from nominal operating point
+                   - Establish safety margins based on process variability
+                """)
+
+# Main function to run when imported
+if __name__ == "__main__":
+    show()
