@@ -11,6 +11,7 @@ from itertools import combinations
 import math
 import io
 import base64
+import statsmodels.formula.api as smf
 
 # Helper function for standardized effect calculation (difference of averages)
 def calculate_main_effect(data, factor_col, response_col):
@@ -394,13 +395,27 @@ def show():
             st.markdown("**ANOVA Table**")
 
             # Format the ANOVA table for display
+            # Format the ANOVA table for display
             formatted_anova = anova_table.copy()
             formatted_anova['F'] = formatted_anova['F'].round(3)
             formatted_anova['PR(>F)'] = formatted_anova['PR(>F)'].round(4)
-            formatted_anova.columns = ['Sum Sq', 'DF', 'F-value', 'p-value'] # Reorder slightly
-            formatted_anova = formatted_anova[['DF', 'Sum Sq', 'F-value', 'p-value']] # Select columns
-            formatted_anova['Mean Sq'] = formatted_anova['Sum Sq'] / formatted_anova['DF'] # Calculate Mean Square
-            formatted_anova = formatted_anova[['DF', 'Sum Sq', 'Mean Sq', 'F-value', 'p-value']] # Final order
+
+            # Use rename instead of direct assignment
+            formatted_anova = formatted_anova.rename(columns={
+                'sum_sq': 'Sum Sq',
+                'df': 'DF',
+                'F': 'F-value',
+                'PR(>F)': 'p-value'
+            })
+
+            # Reorder columns (make sure these column names match the renamed ones)
+            formatted_anova = formatted_anova[['DF', 'Sum Sq', 'F-value', 'p-value']]
+
+            # Calculate Mean Square
+            formatted_anova['Mean Sq'] = formatted_anova['Sum Sq'] / formatted_anova['DF']
+
+            # Final column order
+            formatted_anova = formatted_anova[['DF', 'Sum Sq', 'Mean Sq', 'F-value', 'p-value']]
 
             st.dataframe(formatted_anova.style.format({
                 'Sum Sq': '{:.2f}',
@@ -409,14 +424,19 @@ def show():
                 'p-value': '{:.4g}'
             }).background_gradient(subset=['p-value'], cmap='Reds_r'))
 
+            # Calculate Sums of Squares manually for educational purposes
+            SS_Total_anova = np.sum((response_anova - np.mean(response_anova))**2)
+            SS_Model_anova = np.sum((model_anova.fittedvalues - np.mean(response_anova))**2)
+            SS_Error_anova = np.sum((response_anova - model_anova.fittedvalues)**2)
+
+            # Make sure these variables are defined before this line:
             st.markdown(f"""
             **Model Statistics**:
             - R² = {r_squared_anova:.4f}
-            - $SS_{Total}$ = {SS_Total_anova:.2f}
-            - $SS_{Model}$ = {SS_Model_anova:.2f}
-            - $SS_{Error}$ = {SS_Error_anova:.2f}
+            - $SS_{{'Total'}}$ = {SS_Total_anova:.2f}
+            - $SS_{{'Model'}}$ = {SS_Model_anova:.2f}
+            - $SS_{{'Error'}}$ = {SS_Error_anova:.2f}
             """)
-
         # Create effect visualization
         st.markdown("**Visualizing ANOVA Components**")
 
@@ -1892,6 +1912,24 @@ def show():
         predictions = uncertainty_model.predict(X_pred)
         
         # Calculate prediction variance
+
+        # 1. First, check if 'x1' and 'x2' columns exist
+        if 'x1' in design_df.columns and 'x2' in design_df.columns:
+            # 2. Create the interaction term
+            design_df['x1:x2'] = design_df['x1'] * design_df['x2']
+            
+            # 3. Create the quadratic terms
+            design_df['I(x1**2)'] = design_df['x1'] ** 2
+            design_df['I(x2**2)'] = design_df['x2'] ** 2
+            
+            # 4. Now you can safely use these columns
+            X_design = sm.add_constant(design_df[['x1', 'x2', 'x1:x2', 'I(x1**2)', 'I(x2**2)']])
+        else:
+            # Handle the case where 'x1' and 'x2' don't exist
+            # This depends on your specific context
+            # For example, you might just use the available columns:
+            X_design = sm.add_constant(design_df)
+
         X_design = sm.add_constant(design_df[['x1', 'x2', 'x1:x2', 'I(x1**2)', 'I(x2**2)']])
         MSE = np.sum(uncertainty_model.resid**2) / (len(y) - len(uncertainty_model.params))
         
@@ -3013,7 +3051,24 @@ def doe_analysis_workflow():
                         
                         # Predict response
                         X_pred = sm.add_constant(pred_data)
-                        y_pred = np.dot(X_pred, model.params.loc[['Intercept', factor]])
+                        # Check if factor is in model.params
+                        if factor in model.params.index:
+                            # Create the correct subset of parameters
+                            params_to_use = ['Intercept', factor]
+                            params_subset = model.params.loc[params_to_use]
+                            
+                            # Make sure X_pred and params dimensions match
+                            if X_pred.shape[1] == len(params_subset):
+                                y_pred = np.dot(X_pred, params_subset)
+                            else:
+                                # Create a compatible X matrix with just the needed columns
+                                X_minimal = sm.add_constant(pd.DataFrame({factor: X_pred[factor]}))
+                                y_pred = np.dot(X_minimal, params_subset)
+                        else:
+                            # Handle case where factor is not in model
+                            st.warning(f"Factor {factor} not found in model parameters")
+                            # Set y_pred to a reasonable default
+                            y_pred = [model.params['Intercept']] * len(X_pred)
                         
                         # Add to subplot
                         fig.add_trace(
@@ -3199,7 +3254,7 @@ def doe_analysis_workflow():
             rmse = np.sqrt(np.mean(model.resid**2))
             
             # Calculate PRESS (Prediction Error Sum of Squares)
-            h_diag = np.diag(model.get_influence().hat_matrix_diag)
+            h_diag = model.get_influence().hat_matrix_diag
             press_resid = model.resid / (1 - h_diag)
             press = np.sum(press_resid**2)
             
@@ -3313,7 +3368,13 @@ def doe_analysis_workflow():
             # Create bar chart of effect significance
             effect_p_values = summary_df.iloc[1:].copy()  # Skip intercept
             effect_p_values = effect_p_values.sort_values('p-value')
-            
+            # First, create a copy of your DataFrame to avoid modifying the original
+            effect_p_values = effect_p_values.copy()  # assuming effect_p_values is your DataFrame
+
+            # Add the -log10(p-value) column
+            effect_p_values['-log10(p-value)'] = -np.log10(effect_p_values['p-value'])
+
+            # Now create the plot with the new column
             fig = px.bar(
                 effect_p_values,
                 y=effect_p_values.index,
@@ -3929,7 +3990,31 @@ def doe_analysis_workflow():
                 # Predict response
                 try:
                     import patsy
-                    X_pred = patsy.dmatrix(model.model.formula, pred_data, return_type='dataframe')
+
+                    # Extract the selected response variable
+                    selected_response = st.session_state.selected_response
+
+                    # Create a new formula using the selected response
+                  
+                    def build_formula_with_response(model, new_response):
+                        """Rebuild a formula using a new response variable name."""
+                        model_terms = model.model.formula.split('~')[1].strip()
+                        new_formula = f"{new_response} ~ {model_terms}"
+                        return new_formula
+                    # Replace the left side of the formula with the selected response
+                    new_formula = original_formula.split("~")
+                    new_formula[0] = selected_response
+                    new_formula = "~".join(new_formula)
+
+                    try:
+                        X_pred = patsy.dmatrix(new_formula, pred_df, return_type='dataframe')
+                    except Exception as e:
+                        st.error(f"Error building prediction matrix: {e}")
+                        # Provide more specific error message
+                        st.info("Try selecting a different response variable or checking your model formulation.")
+                        return  # Exit the current function
+
+
                     y_pred = model.predict(X_pred)
                     
                     # Get confidence intervals
